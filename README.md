@@ -92,7 +92,7 @@ Windows computer names like `CRUSHER` are resolved with NetBIOS, and Macs by Bon
 Needs Xcode 15 or later (or the Command Line Tools).
 
 ```bash
-git clone https://github.com/<you>/AutoShareMount.git
+git clone https://github.com/troyhome/AutoShareMount.git
 cd AutoShareMount
 ./scripts/build-app.sh          # → dist/AutoShareMount.app and dist/AutoShareMount-1.0.0.zip
 ```

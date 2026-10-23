@@ -1,6 +1,7 @@
 import Foundation
 import Network
 import Security
+import SystemConfiguration
 
 struct FoundComputer: Identifiable, Hashable {
     enum Kind: String { case mac, pc, server }
@@ -31,8 +32,21 @@ final class Discovery: ObservableObject {
     func scan(store: ShareStore) async {
         guard !scanning else { return }
         scanning = true
-        defer { scanning = false; lastScan = Date() }
+        let saved = store.shares.compactMap(\.parsed)
+        // Everything below does network and Keychain calls that can block; keep it all off
+        // the main thread so the window never freezes.
+        computers = await Task.detached(priority: .userInitiated) { await Self.performScan(saved: saved) }.value
+        scanning = false
+        lastScan = Date()
+    }
 
+    nonisolated static func performScan(saved: [ShareURL]) async -> [FoundComputer] {
+        let t0 = Date()
+        func mark(_ what: String) {
+            if ProcessInfo.processInfo.environment["ASM_DEBUG"] != nil {
+                print(String(format: "  [%.2fs] %@", Date().timeIntervalSince(t0), what))
+            }
+        }
         let localNets = Net.localIPv4Networks()
         let myIPs = Set(localNets.map(\.ip))
         let ips = localNets.flatMap { Net.hosts(in: $0) }
@@ -42,6 +56,7 @@ final class Discovery: ObservableObject {
         async let openHosts = Self.sweep(ips, port: 445)
         let (services, models, open) = await (smbServices, deviceInfo, openHosts)
 
+        mark("bonjour + sweep done")
         var byKey: [String: FoundComputer] = [:]
         func upsert(_ c: FoundComputer) {
             if var existing = byKey[c.key] {
@@ -53,7 +68,8 @@ final class Discovery: ObservableObject {
         }
 
         // Bonjour services: resolve each to an IP in parallel.
-        let me = HostName.normalize(Host.current().localizedName ?? "")
+        // Host.current() can block for a long time doing reverse lookups; this can't.
+        let me = HostName.normalize(SCDynamicStoreCopyComputerName(nil, nil) as String? ?? "")
         let resolved: [(String, String?)] = await withTaskGroup(of: (String, String?).self) { g in
             for name in services {
                 g.addTask {
@@ -75,12 +91,13 @@ final class Discovery: ObservableObject {
             upsert(FoundComputer(key: key, name: name, connectHost: host, ip: ip, kind: kind))
         }
 
+        mark("bonjour resolved")
         // Port‑445 sweep: anything not already found by Bonjour is named via NetBIOS / reverse DNS.
         let knownIPs = Set(byKey.values.compactMap(\.ip))
         let unknown = open.filter { !myIPs.contains($0) && !knownIPs.contains($0) }
         let named: [(String, String?, String?)] = await withTaskGroup(of: (String, String?, String?).self) { g in
             for ip in unknown {
-                g.addTask { await Task.detached { (ip, Net.netbiosName(ip), Net.reverseName(ip)) }.value }
+                g.addTask { await Task.detached { (ip, Net.netbiosName(ip), Net.withTimeout(2, { Net.reverseName(ip) })) }.value }
             }
             var out: [(String, String?, String?)] = []
             for await r in g { out.append(r) }
@@ -102,6 +119,7 @@ final class Discovery: ObservableObject {
             }
         }
 
+        mark("names looked up")
         // Already-connected drives (their servers are obviously there).
         for m in MountTable.current() {
             let key = HostName.normalize(m.host)
@@ -116,8 +134,10 @@ final class Discovery: ObservableObject {
             byKey[key]?.connectedDrives.append(m)
         }
 
+        mark("mounts merged")
         // Servers you've saved a password for (names only — passwords are never read).
-        for server in Self.keychainSMBServers() {
+        let keychainServers = Self.keychainSMBServers()
+        for server in keychainServers {
             let key = HostName.normalize(server)
             if byKey[key] != nil {
                 byKey[key]?.hasSavedPassword = true
@@ -132,11 +152,12 @@ final class Discovery: ObservableObject {
             }
         }
 
+        mark("keychain done")
         for (k, c) in byKey {
-            byKey[k]?.savedDriveCount = store.shares.filter { s in s.parsed.map { HostName.matches($0.host, c.connectHost) } ?? false }.count
+            byKey[k]?.savedDriveCount = saved.filter { HostName.matches($0.host, c.connectHost) }.count
         }
 
-        computers = byKey.values.sorted {
+        return byKey.values.sorted {
             ($0.online ? 0 : 1, $0.name.lowercased()) < ($1.online ? 0 : 1, $1.name.lowercased())
         }
     }
@@ -187,24 +208,53 @@ final class Discovery: ObservableObject {
         await Task.detached { sweepBlocking(ips, port: port) }.value
     }
 
-    nonisolated private static func sweepBlocking(_ ips: [String], port: UInt16) -> [String] {
-            let lock = NSLock()
-            var found: [String] = []
-            let group = DispatchGroup()
-            let gate = DispatchSemaphore(value: 64)
-            for ip in ips {
-                gate.wait()
-                group.enter()
-                DispatchQueue.global(qos: .userInitiated).async {
-                    if Net.tcpProbe(ip, port, timeoutMs: 500).ok {
-                        lock.lock(); found.append(ip); lock.unlock()
-                    }
-                    gate.signal()
-                    group.leave()
+    /// Opens up to 200 non-blocking connections at once and waits on them together with
+    /// poll(), so a /22 (1,000 addresses) takes about 2 seconds without extra threads.
+    nonisolated private static func sweepBlocking(_ ips: [String], port: UInt16, waitMs: Int = 450) -> [String] {
+        var found: [String] = []
+        var i = 0
+        while i < ips.count {
+            let batch = ips[i..<min(i + 200, ips.count)]
+            i += 200
+            var pending: [(fd: Int32, ip: String)] = []
+            for ip in batch {
+                var sa = sockaddr_in()
+                sa.sin_len = UInt8(MemoryLayout<sockaddr_in>.size)
+                sa.sin_family = sa_family_t(AF_INET)
+                sa.sin_port = port.bigEndian
+                guard inet_pton(AF_INET, ip, &sa.sin_addr) == 1 else { continue }
+                let fd = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP)
+                guard fd >= 0 else { break }   // out of descriptors: finish this batch with what we have
+                var one: Int32 = 1
+                setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &one, socklen_t(MemoryLayout<Int32>.size))
+                _ = fcntl(fd, F_SETFL, fcntl(fd, F_GETFL) | O_NONBLOCK)
+                let rc = withUnsafePointer(to: &sa) {
+                    $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { connect(fd, $0, socklen_t(MemoryLayout<sockaddr_in>.size)) }
                 }
+                if rc == 0 { found.append(ip); close(fd) }
+                else if errno == EINPROGRESS { pending.append((fd, ip)) }
+                else { close(fd) }
             }
-            group.wait()
-            return found
+            let deadline = Date().addingTimeInterval(Double(waitMs) / 1000)
+            while !pending.isEmpty {
+                let remaining = Int32(deadline.timeIntervalSinceNow * 1000)
+                if remaining <= 0 { break }
+                var pfds = pending.map { pollfd(fd: $0.fd, events: Int16(POLLOUT), revents: 0) }
+                guard poll(&pfds, nfds_t(pfds.count), remaining) > 0 else { break }
+                var still: [(fd: Int32, ip: String)] = []
+                for (k, p) in pfds.enumerated() {
+                    if p.revents == 0 { still.append(pending[k]); continue }
+                    var err: Int32 = 0
+                    var len = socklen_t(MemoryLayout<Int32>.size)
+                    getsockopt(p.fd, SOL_SOCKET, SO_ERROR, &err, &len)
+                    if err == 0 { found.append(pending[k].ip) }
+                    close(p.fd)
+                }
+                pending = still
+            }
+            pending.forEach { close($0.fd) }
+        }
+        return found
     }
 
     // MARK: Keychain

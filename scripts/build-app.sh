@@ -2,8 +2,9 @@
 # Builds dist/AutoShareMount.app (universal: Apple Silicon + Intel) and a zip for GitHub Releases.
 #
 #   ./scripts/build-app.sh            ad-hoc signed (fine for your own Macs)
-#   SIGN_ID="Developer ID Application: Your Name (TEAMID)" ./scripts/build-app.sh
-#                                     signed for distribution (then notarize the zip)
+#   SIGN_ID="Developer ID Application: Your Name (TEAMID)" NOTARY_PROFILE=AutoShareMount ./scripts/build-app.sh
+#                                     signed, notarized and stapled: opens anywhere without warnings
+#                                     (create the profile once: xcrun notarytool store-credentials AutoShareMount)
 #   SIGN_ID=<Apple Development identity or its SHA-1>
 #                                     stable identity for your own Macs (permissions survive updates)
 set -euo pipefail
@@ -69,6 +70,15 @@ echo "→ Zipping"
 # Fixed name so https://github.com/<owner>/AutoShareMount/releases/latest/download/AutoShareMount.zip always works.
 rm -f dist/AutoShareMount.zip
 ditto -c -k --keepParent "$APP" dist/AutoShareMount.zip
+
+if [[ -n "${NOTARY_PROFILE:-}" ]]; then
+  echo "→ Notarizing (usually 1–5 minutes)…"
+  xcrun notarytool submit dist/AutoShareMount.zip --keychain-profile "$NOTARY_PROFILE" --wait
+  xcrun stapler staple "$APP"
+  rm -f dist/AutoShareMount.zip
+  ditto -c -k --keepParent "$APP" dist/AutoShareMount.zip
+  spctl -a -vv "$APP"
+fi
 
 echo
 echo "Built $APP"

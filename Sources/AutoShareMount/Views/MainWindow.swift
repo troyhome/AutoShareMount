@@ -331,13 +331,13 @@ struct ActivityView: View {
 // MARK: - Settings
 
 struct SettingsView: View {
-    @State private var loginOn = LoginItem.isOn
+    @State private var loginOn = LoginItem.wanted
 
     var body: some View {
         Form {
             SwiftUI.Section {
                 Toggle("Open AutoShareMount when I log in", isOn: $loginOn)
-                    .onChange(of: loginOn) { LoginItem.set($0) }
+                    .onChange(of: loginOn) { LoginItem.wanted = $0 }
                 Text("Needed so drives reconnect after a restart.")
                     .font(.caption).foregroundStyle(.secondary)
             }

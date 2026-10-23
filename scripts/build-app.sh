@@ -4,6 +4,8 @@
 #   ./scripts/build-app.sh            ad-hoc signed (fine for your own Macs)
 #   SIGN_ID="Developer ID Application: Your Name (TEAMID)" ./scripts/build-app.sh
 #                                     signed for distribution (then notarize the zip)
+#   SIGN_ID=<Apple Development identity or its SHA-1>
+#                                     stable identity for your own Macs (permissions survive updates)
 set -euo pipefail
 cd "${0:A:h}/.."
 
@@ -54,16 +56,20 @@ cat > "$APP/Contents/Info.plist" <<EOF
 EOF
 
 echo "→ Signing"
-if [[ -n "${SIGN_ID:-}" ]]; then
+xattr -cr "$APP"   # Finder/provenance attributes break strict signature checks
+if [[ "${SIGN_ID:-}" == *"Developer ID"* ]]; then
   codesign --force --options runtime --timestamp -s "$SIGN_ID" "$APP"
+elif [[ -n "${SIGN_ID:-}" ]]; then
+  codesign --force -s "$SIGN_ID" "$APP"
 else
   codesign --force -s - "$APP"
 fi
 
 echo "→ Zipping"
-rm -f "dist/AutoShareMount-$VERSION.zip"
-ditto -c -k --keepParent "$APP" "dist/AutoShareMount-$VERSION.zip"
+# Fixed name so https://github.com/<owner>/AutoShareMount/releases/latest/download/AutoShareMount.zip always works.
+rm -f dist/AutoShareMount.zip
+ditto -c -k --keepParent "$APP" dist/AutoShareMount.zip
 
 echo
 echo "Built $APP"
-echo "Zip:  dist/AutoShareMount-$VERSION.zip"
+echo "Zip:  dist/AutoShareMount.zip"

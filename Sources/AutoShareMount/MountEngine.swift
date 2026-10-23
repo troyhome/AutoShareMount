@@ -351,7 +351,7 @@ final class MountEngine: ObservableObject {
     nonisolated static func restartNetAuthHelper() async {
         await Task.detached {
             Net.run("/usr/bin/killall", ["NetAuthSysAgent"], timeout: 3)
-            Thread.sleep(forTimeInterval: 1)
+            usleep(1_000_000)
         }.value
     }
 

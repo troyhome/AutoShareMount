@@ -48,7 +48,7 @@ final class AppModel: ObservableObject {
         firstLaunch = store.isFirstLaunch
         engine = MountEngine(store: store, log: log)
         engine.start()
-        if firstLaunch { LoginItem.set(true) }
+        LoginItem.applyPreference()
         // `AutoShareMount --reconnect` (from Terminal, Shortcuts or a script) acts like a wake.
         DistributedNotificationCenter.default().addObserver(forName: CLI.reconnectNote, object: nil, queue: .main) { [engine] _ in
             Task { @MainActor in engine.reconnectAll() }
@@ -58,6 +58,17 @@ final class AppModel: ObservableObject {
 
 enum LoginItem {
     static var isOn: Bool { SMAppService.mainApp.status == .enabled }
+
+    /// What the user chose in Settings (on unless they turned it off).
+    static var wanted: Bool {
+        get { UserDefaults.standard.object(forKey: "openAtLogin") as? Bool ?? true }
+        set { UserDefaults.standard.set(newValue, forKey: "openAtLogin"); set(newValue) }
+    }
+
+    /// Re-registers on every launch: a moved or re-signed app can lose its login item.
+    static func applyPreference() {
+        if wanted != isOn { set(wanted) }
+    }
 
     static func set(_ on: Bool) {
         do {

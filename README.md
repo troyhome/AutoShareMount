@@ -17,6 +17,14 @@ Requires macOS 13 Ventura or later. Works on Apple Silicon and Intel Macs.
 
 ## Install
 
+**Easiest:** open **Terminal**, paste this line and press Return. It downloads the latest version into Applications and opens it:
+
+```bash
+curl -fsSL -o /tmp/AutoShareMount.zip https://github.com/troyhome/AutoShareMount/releases/latest/download/AutoShareMount.zip && ditto -x -k /tmp/AutoShareMount.zip /Applications && open /Applications/AutoShareMount.app
+```
+
+**Or by hand:**
+
 1. Download **AutoShareMount.zip** from the [Releases](../../releases) page and open it.
 2. Drag **AutoShareMount** into your **Applications** folder.
 3. Open it. The first time, macOS may say it can't check the app. If it does, open **System Settings › Privacy & Security**, scroll down and click **Open Anyway**.
@@ -94,14 +102,14 @@ Needs Xcode 15 or later (or the Command Line Tools).
 ```bash
 git clone https://github.com/troyhome/AutoShareMount.git
 cd AutoShareMount
-./scripts/build-app.sh          # → dist/AutoShareMount.app and dist/AutoShareMount-1.0.0.zip
+./scripts/build-app.sh          # → dist/AutoShareMount.app and dist/AutoShareMount.zip
 ```
 
 For a release other people can open without warnings, sign with a Developer ID and notarize:
 
 ```bash
 SIGN_ID="Developer ID Application: Your Name (TEAMID)" VERSION=1.0.0 ./scripts/build-app.sh
-xcrun notarytool submit dist/AutoShareMount-1.0.0.zip --keychain-profile <profile> --wait
+xcrun notarytool submit dist/AutoShareMount.zip --keychain-profile <profile> --wait
 xcrun stapler staple dist/AutoShareMount.app
 ```
 

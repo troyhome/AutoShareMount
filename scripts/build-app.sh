@@ -13,7 +13,12 @@ cd "${0:A:h}/.."
 VERSION="${VERSION:-1.0.0}"
 BUILD="${BUILD:-1}"
 BUNDLE_ID="${BUNDLE_ID:-io.github.autosharemount}"
-APP="dist/AutoShareMount.app"
+# Assemble and sign outside the project: folders like ~/Documents can get Finder metadata
+# re-attached, which codesign rejects. Results are copied to dist/ at the end.
+STAGE="$(mktemp -d)"
+APP="$STAGE/AutoShareMount.app"
+ZIP="$STAGE/AutoShareMount.zip"
+trap 'rm -rf "$STAGE"' EXIT
 
 echo "→ Compiling (release, universal)…"
 swift build -c release --arch arm64 --arch x86_64
@@ -68,18 +73,22 @@ fi
 
 echo "→ Zipping"
 # Fixed name so https://github.com/<owner>/AutoShareMount/releases/latest/download/AutoShareMount.zip always works.
-rm -f dist/AutoShareMount.zip
-ditto -c -k --keepParent "$APP" dist/AutoShareMount.zip
+ditto -c -k --keepParent "$APP" "$ZIP"
 
 if [[ -n "${NOTARY_PROFILE:-}" ]]; then
   echo "→ Notarizing (usually 1–5 minutes)…"
-  xcrun notarytool submit dist/AutoShareMount.zip --keychain-profile "$NOTARY_PROFILE" --wait
+  xcrun notarytool submit "$ZIP" --keychain-profile "$NOTARY_PROFILE" --wait
   xcrun stapler staple "$APP"
-  rm -f dist/AutoShareMount.zip
-  ditto -c -k --keepParent "$APP" dist/AutoShareMount.zip
+  rm -f "$ZIP"
+  ditto -c -k --keepParent "$APP" "$ZIP"
   spctl -a -vv "$APP"
 fi
 
+mkdir -p dist
+rm -rf dist/AutoShareMount.app dist/AutoShareMount.zip
+cp "$ZIP" dist/AutoShareMount.zip
+ditto "$APP" dist/AutoShareMount.app
+
 echo
-echo "Built $APP"
+echo "Built dist/AutoShareMount.app"
 echo "Zip:  dist/AutoShareMount.zip"

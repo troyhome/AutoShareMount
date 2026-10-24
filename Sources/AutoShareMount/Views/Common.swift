@@ -35,17 +35,11 @@ extension FoundComputer.Kind {
 struct MenuBarIcon: View {
     @EnvironmentObject var engine: MountEngine
     @Environment(\.openWindow) private var openWindow
-    let firstLaunch: Bool
 
     var body: some View {
         let problem = engine.status.values.contains { $0.needsAttention }
         Image(systemName: problem ? "externaldrive.badge.exclamationmark" : "externaldrive.connected.to.line.below")
-            .onAppear {
-                // First launch: show the window so people see what was found.
-                if firstLaunch {
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { OpenMainWindow(openWindow: openWindow)() }
-                }
-            }
+            .onAppear { WindowOpener.action = openWindow }
     }
 }
 

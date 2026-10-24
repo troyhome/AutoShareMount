@@ -32,6 +32,8 @@ curl -fsSL -o /tmp/AutoShareMount.zip https://github.com/troyhome/AutoShareMount
 
 A drive icon appears in the menu bar. AutoShareMount starts automatically every time you log in.
 
+> **Don't see the icon?** On MacBooks with a notch, macOS hides menu bar icons when the bar is full. Open **AutoShareMount** from Applications (or Spotlight) any time to bring up its window.
+
 ## Set up (about two minutes)
 
 ### 1. Turn on sharing on the computer that has the files

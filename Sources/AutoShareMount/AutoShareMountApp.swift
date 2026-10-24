@@ -11,6 +11,7 @@ enum Main {
 }
 
 struct AutoShareMountApp: App {
+    @NSApplicationDelegateAdaptor(AppDelegate.self) private var delegate
     @StateObject private var model = AppModel()
 
     var body: some Scene {
@@ -19,7 +20,7 @@ struct AutoShareMountApp: App {
                 .environmentObject(model.engine)
                 .environmentObject(model.store)
         } label: {
-            MenuBarIcon(firstLaunch: model.firstLaunch)
+            MenuBarIcon()
                 .environmentObject(model.engine)
         }
         .menuBarExtraStyle(.window)
@@ -46,6 +47,7 @@ final class AppModel: ObservableObject {
 
     init() {
         firstLaunch = store.isFirstLaunch
+        ShareStoreFlags.firstLaunch = firstLaunch
         engine = MountEngine(store: store, log: log)
         engine.start()
         LoginItem.applyPreference()
@@ -76,6 +78,52 @@ enum LoginItem {
         } catch {
             NSLog("AutoShareMount: login item change failed: \(error)")
         }
+    }
+}
+
+/// The menu bar icon can be hidden (a full menu bar on a MacBook with a notch hides icons),
+/// so opening the app from Finder / Launchpad / Spotlight must show the window too.
+final class AppDelegate: NSObject, NSApplicationDelegate {
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        if !Self.launchedAtLogin() || ShareStoreFlags.firstLaunch {
+            WindowOpener.request()
+        }
+    }
+
+    /// Opening the app again while it's running (double-click, Spotlight, `open`).
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        WindowOpener.request()
+        return true
+    }
+
+    /// True when macOS started us as a login item rather than the user opening the app.
+    private static func launchedAtLogin() -> Bool {
+        if let event = NSAppleEventManager.shared().currentAppleEvent,
+           event.eventID == kAEOpenApplication,
+           event.paramDescriptor(forKeyword: keyAEPropData)?.enumCodeValue == keyAELaunchedAsLogInItem {
+            return true
+        }
+        // Login items started by launchd don't always carry that flag: treat a launch within
+        // the first minutes after boot as a login launch.
+        return ProcessInfo.processInfo.systemUptime < 180
+    }
+}
+
+enum ShareStoreFlags {
+    static var firstLaunch = false
+}
+
+/// Opens the main window from places that have no SwiftUI environment (the app delegate).
+/// The action is captured from the menu bar icon's view as soon as it exists.
+@MainActor
+enum WindowOpener {
+    static var action: OpenWindowAction? { didSet { if pending { request() } } }
+    private static var pending = false
+
+    static func request() {
+        guard let action else { pending = true; return }
+        pending = false
+        DispatchQueue.main.async { OpenMainWindow(openWindow: action)() }
     }
 }
 

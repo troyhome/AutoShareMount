@@ -21,7 +21,10 @@ enum Section: String, CaseIterable, Identifiable {
 
 struct MainWindow: View {
     @EnvironmentObject var store: ShareStore
-    @State private var section: Section? = .drives
+    // ASM_SECTION=find opens straight to a page (used for testing).
+    @State private var section: Section? = Section.allCases.first {
+        $0.rawValue.lowercased().hasPrefix(ProcessInfo.processInfo.environment["ASM_SECTION"]?.lowercased() ?? "~")
+    } ?? .drives
 
     var body: some View {
         NavigationSplitView {
@@ -205,7 +208,7 @@ struct FindView: View {
                     Text("Click **Connect** next to a computer. macOS asks you to sign in (tick “Remember this password”) and choose its drives. AutoShareMount then keeps them connected.")
                         .font(.callout)
                         .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
+                        .lineLimit(3)
                 }
                 Spacer()
                 if discovery.scanning { ProgressView().controlSize(.small).padding(.top, 4) }

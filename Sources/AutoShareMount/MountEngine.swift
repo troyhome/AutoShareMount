@@ -318,12 +318,17 @@ final class MountEngine: ObservableObject {
 
     // MARK: NetFS
 
-    /// Mounts like Finder (Keychain credentials) but never shows UI; cancels after `timeout`.
+    /// Mounts like Finder (Keychain credentials) but never shows UI; stops waiting after `timeout`.
+    ///
+    /// We deliberately never call NetFSMountURLCancel: once a request has finished, or the
+    /// sign-in helper was restarted, NetAuth has already released it and cancelling crashes
+    /// inside NetAuth (seen in 1.0.3). An abandoned request just completes or fails on its own,
+    /// and a late success shows up in the mount table like any other mount.
     nonisolated static func netfsMount(_ p: ShareURL, timeout: TimeInterval) async -> (Int32, String?) {
         await withCheckedContinuation { (cont: CheckedContinuation<(Int32, String?), Never>) in
             let lock = NSLock()
             var done = false
-            var requestID: AsyncRequestID?
+            var requestID: AsyncRequestID?   // required out-parameter; intentionally unused
             func finish(_ rc: Int32, _ path: String?) {
                 lock.lock(); defer { lock.unlock() }
                 guard !done else { return }
@@ -340,10 +345,7 @@ final class MountEngine: ObservableObject {
                 finish(status, (points as? [String])?.first)
             }
             if rc != 0 { finish(rc, nil); return }
-            q.asyncAfter(deadline: .now() + timeout) {
-                if let requestID { NetFSMountURLCancel(requestID) }
-                finish(ETIMEDOUT, nil)
-            }
+            q.asyncAfter(deadline: .now() + timeout) { finish(ETIMEDOUT, nil) }
         }
     }
 

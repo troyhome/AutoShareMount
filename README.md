@@ -84,6 +84,7 @@ The **Activity** page shows everything AutoShareMount did, also saved to `~/Libr
 | Before each connection | TCP check of the file-sharing port with a 0.9 s timeout, so offline computers never cause waits |
 | Connecting | Apple's NetFS (the same as Finder) with your Keychain credentials and no dialogs, all drives at once, 20 s limit |
 | Connection stalls | Restart macOS's network sign-in helper, then try the Finder "Connect to Server" path |
+| App quits unexpectedly | Its launch agent reopens it within seconds (quitting from the menu keeps it closed) |
 
 Windows computer names like `CRUSHER` are resolved with NetBIOS, and Macs by Bonjour. A Mac's two names (`Troy’s MacBook` and `Troys-MacBook.local`) are recognised as the same computer, so drives are never connected twice.
 

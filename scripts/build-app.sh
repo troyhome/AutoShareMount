@@ -61,6 +61,26 @@ cat > "$APP/Contents/Info.plist" <<EOF
 </plist>
 EOF
 
+# Launch agent: starts the app at login and reopens it if it ever quits unexpectedly
+# (KeepAlive/SuccessfulExit=false). Quitting from the menu exits cleanly and stays quit.
+mkdir -p "$APP/Contents/Library/LaunchAgents"
+cat > "$APP/Contents/Library/LaunchAgents/$BUNDLE_ID.agent.plist" <<AGENT
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>$BUNDLE_ID.agent</string>
+  <key>BundleProgram</key><string>Contents/MacOS/AutoShareMount</string>
+  <key>RunAtLoad</key><true/>
+  <key>KeepAlive</key><dict><key>SuccessfulExit</key><false/></dict>
+  <key>ThrottleInterval</key><integer>10</integer>
+  <key>LimitLoadToSessionType</key><string>Aqua</string>
+  <key>ProcessType</key><string>Interactive</string>
+  <key>AssociatedBundleIdentifiers</key><array><string>$BUNDLE_ID</string></array>
+</dict>
+</plist>
+AGENT
+
 echo "→ Signing"
 xattr -cr "$APP"   # Finder/provenance attributes break strict signature checks
 if [[ "${SIGN_ID:-}" == *"Developer ID"* ]]; then

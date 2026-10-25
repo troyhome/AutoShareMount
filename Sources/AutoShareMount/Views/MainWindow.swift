@@ -341,7 +341,7 @@ struct SettingsView: View {
             SwiftUI.Section {
                 Toggle("Open AutoShareMount when I log in", isOn: $loginOn)
                     .onChange(of: loginOn) { LoginItem.wanted = $0 }
-                Text("Needed so drives reconnect after a restart.")
+                Text("Needed so drives reconnect after a restart. It also reopens AutoShareMount if it ever quits unexpectedly. Turning it off may close AutoShareMount; open it from Applications to use it again.")
                     .font(.caption).foregroundStyle(.secondary)
             }
             SwiftUI.Section("Local Network access") {

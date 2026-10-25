@@ -5,7 +5,7 @@ struct MenuBarView: View {
     @EnvironmentObject var store: ShareStore
     @Environment(\.openWindow) private var openWindow
 
-    private var connected: Int { store.shares.filter { engine.status[$0.id]?.isMounted == true }.count }
+    private var connected: Int { store.shares.filter { $0.enabled && engine.status[$0.id]?.isMounted == true }.count }
     private var enabled: Int { store.shares.filter(\.enabled).count }
 
     var body: some View {

@@ -117,11 +117,39 @@ final class MountEngine: ObservableObject {
             else { seenMounted.remove(s.id); missing += 1 }
         }
         refresh()
+        fixRenamedDrives(mounts)
         guard missing > 0 || force else { return }
         log.add("\(reason.capitalized): \(missing) drive(s) to reconnect")
         burstUntil = Date().addingTimeInterval(90)
         tick()
         runBurst()
+    }
+
+    /// Drives that came back as "Name-1" (an old empty "Name" folder was in the way) confuse
+    /// apps that remember paths, like music players. At wake/login/network events, eject idle
+    /// ones and reconnect them under their usual name. Busy drives are left alone.
+    private func fixRenamedDrives(_ mounts: [MountedVolume]) {
+        for s in store.shares where s.enabled {
+            guard let p = s.parsed, !inFlight.contains(s.id),
+                  let m = mounts.first(where: { $0.matches(p) }),
+                  MountPoint.isRenamed(m.path, share: p.name),
+                  MountPoint.usualPathAvailable(for: p.name) else { continue }
+            inFlight.insert(s.id)
+            let current = (m.path as NSString).lastPathComponent
+            Task {
+                let ejected = await Task.detached {
+                    Net.run("/usr/sbin/diskutil", ["unmount", m.path], timeout: 20).contains("successful")
+                }.value
+                inFlight.remove(s.id)
+                guard ejected else {
+                    log.add("\(p.name) is connected as “\(current)”; it's in use, so its name will be fixed later")
+                    return
+                }
+                log.add("\(p.name) was connected as “\(current)”; reconnecting it under its usual name")
+                seenMounted.remove(s.id)
+                attempt(s, p, manual: true)
+            }
+        }
     }
 
     private func runBurst() {
@@ -226,7 +254,9 @@ final class MountEngine: ObservableObject {
             }
             status[s.id] = .connecting
             let t0 = Date()
-            var (rc, path) = await Self.netfsMount(p, timeout: 20)
+            let leftover = MountPoint.reusableLeftover(for: p.name)
+            if leftover != nil { log.add("\(p.name): reusing its old folder so it keeps its usual name") }
+            var (rc, path) = await Self.netfsMount(p, timeout: 20, at: leftover)
             if rc == ETIMEDOUT, reach == .yes {
                 // The server answers but the mount doesn't: macOS's network sign-in helper
                 // (NetAuthSysAgent) has most likely stalled, which blocks every connection —
@@ -237,7 +267,7 @@ final class MountEngine: ObservableObject {
                     await Self.restartNetAuthHelper()
                 }
                 if Date().timeIntervalSince(lastHelperRestart) < 60 {
-                    (rc, path) = await Self.netfsMount(p, timeout: 20)
+                    (rc, path) = await Self.netfsMount(p, timeout: 20, at: MountPoint.reusableLeftover(for: p.name))
                 }
             }
             if rc == ETIMEDOUT, fallbackTried[s.id] != gen || manual {
@@ -324,7 +354,7 @@ final class MountEngine: ObservableObject {
     /// sign-in helper was restarted, NetAuth has already released it and cancelling crashes
     /// inside NetAuth (seen in 1.0.3). An abandoned request just completes or fails on its own,
     /// and a late success shows up in the mount table like any other mount.
-    nonisolated static func netfsMount(_ p: ShareURL, timeout: TimeInterval) async -> (Int32, String?) {
+    nonisolated static func netfsMount(_ p: ShareURL, timeout: TimeInterval, at dir: URL? = nil) async -> (Int32, String?) {
         await withCheckedContinuation { (cont: CheckedContinuation<(Int32, String?), Never>) in
             let lock = NSLock()
             var done = false
@@ -338,8 +368,9 @@ final class MountEngine: ObservableObject {
             let open = NSMutableDictionary()
             open["UIOption"] = "NoUI"            // kNAUIOptionKey = kNAUIOptionNoUI
             let mountOpts = NSMutableDictionary()
+            if dir != nil { mountOpts["MountAtMountDir"] = true }   // kNetFSMountAtMountDirKey
             let q = DispatchQueue.global(qos: .userInitiated)
-            let rc = NetFSMountURLAsync(p.url as CFURL, nil, p.user as CFString?, nil,
+            let rc = NetFSMountURLAsync(p.url as CFURL, dir as CFURL?, p.user as CFString?, nil,
                                         open as CFMutableDictionary, mountOpts as CFMutableDictionary,
                                         &requestID, q) { status, _, points in
                 finish(status, (points as? [String])?.first)

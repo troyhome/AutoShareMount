@@ -61,3 +61,40 @@ enum MountTable {
         withUnsafeBytes(of: tuple) { String(cString: $0.bindMemory(to: CChar.self).baseAddress!) }
     }
 }
+
+/// Keeps drives at their usual path (/Volumes/<share>).
+///
+/// When a connection dies uncleanly, macOS can leave an empty folder behind in /Volumes.
+/// The next connection then lands at "/Volumes/<share>-1", which breaks apps that remember
+/// paths. Removing the folder needs admin rights, but it belongs to the user, so we can
+/// mount straight onto it instead.
+enum MountPoint {
+    /// "/Volumes/2 Set 6TB-1" for share "2 Set 6TB".
+    static func isRenamed(_ path: String, share: String) -> Bool {
+        let ns = path as NSString
+        let last = ns.lastPathComponent
+        guard ns.deletingLastPathComponent == "/Volumes", last.hasPrefix(share + "-") else { return false }
+        return Int(last.dropFirst(share.count + 1)) != nil
+    }
+
+    static func usualPath(for share: String) -> String { "/Volumes/" + share }
+
+    /// An empty folder owned by this user at /Volumes/<share> that isn't a mounted volume.
+    static func reusableLeftover(for share: String) -> URL? {
+        let path = usualPath(for: share)
+        var st = stat()
+        guard lstat(path, &st) == 0, (st.st_mode & S_IFMT) == S_IFDIR, st.st_uid == getuid() else { return nil }
+        var fs = statfs()
+        guard statfs(path, &fs) == 0 else { return nil }
+        let mountedOn = withUnsafeBytes(of: fs.f_mntonname) { String(cString: $0.bindMemory(to: CChar.self).baseAddress!) }
+        guard mountedOn != path else { return nil }   // it's a real volume
+        guard let items = try? FileManager.default.contentsOfDirectory(atPath: path),
+              items.allSatisfy({ [".DS_Store", ".localized"].contains($0) }) else { return nil }
+        return URL(fileURLWithPath: path, isDirectory: true)
+    }
+
+    /// The usual path is free (nothing there) or only an empty leftover is in the way.
+    static func usualPathAvailable(for share: String) -> Bool {
+        !FileManager.default.fileExists(atPath: usualPath(for: share)) || reusableLeftover(for: share) != nil
+    }
+}

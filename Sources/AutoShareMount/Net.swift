@@ -1,5 +1,6 @@
 import Foundation
 import Network
+import SystemConfiguration
 
 /// Name resolution and fast reachability checks.
 enum Net {
@@ -225,6 +226,19 @@ enum Net {
         private var v: T?
         func set(_ x: T?) { l.lock(); v = x; l.unlock() }
         func get() -> T? { l.lock(); defer { l.unlock() }; return v }
+    }
+
+    // MARK: VPN
+
+    /// The interface name ("utun4") when a VPN carries this Mac's traffic, else nil.
+    /// macOS always has a few idle utun interfaces, so only the primary (default-route)
+    /// interface counts. Split-tunnel VPNs don't show up here, and rarely cause trouble.
+    static func activeVPN() -> String? {
+        if ProcessInfo.processInfo.environment["ASM_FAKE_VPN"] != nil { return "utun9" }   // testing
+        guard let store = SCDynamicStoreCreate(nil, "AutoShareMount.vpn" as CFString, nil, nil),
+              let global = SCDynamicStoreCopyValue(store, "State:/Network/Global/IPv4" as CFString) as? [String: Any],
+              let name = global["PrimaryInterface"] as? String else { return nil }
+        return ["utun", "ipsec", "ppp", "tun", "tap", "wg"].contains(where: name.hasPrefix) ? name : nil
     }
 
     // MARK: Local interfaces

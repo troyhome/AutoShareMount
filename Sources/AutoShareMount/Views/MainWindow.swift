@@ -68,6 +68,9 @@ struct DrivesView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 List {
+                    if engine.vpnMayBeBlocking {
+                        VPNHint().listRowSeparator(.hidden)
+                    }
                     if !store.shares.isEmpty {
                         SwiftUI.Section {
                             ForEach(store.shares) { s in DriveRow(share: s) }

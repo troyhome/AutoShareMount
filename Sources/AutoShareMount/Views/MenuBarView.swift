@@ -20,6 +20,8 @@ struct MenuBarView: View {
                 }
             }
 
+            if engine.vpnMayBeBlocking { VPNHint(compact: true) }
+
             if store.shares.isEmpty {
                 Text("No drives yet. Find the computers on your network and pick the drives to keep connected.")
                     .font(.callout)

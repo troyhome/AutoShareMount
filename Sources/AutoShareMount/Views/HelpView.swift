@@ -37,6 +37,7 @@ struct HelpView: View {
                     "**“Needs your password”** — click **Sign In…** next to the drive and tick **Remember this password**.",
                     "**“Waiting for …”** — the other computer is asleep, off, or not on this network. It reconnects by itself once it's back.",
                     "**“Ejected”** — you ejected it. It comes back after the next sleep or restart, or click **Connect**.",
+                    "**Using a VPN?** VPNs (Proton VPN, NordVPN, ExpressVPN…) often hide your home network, so drives can't connect while it's on. In the VPN's settings turn on **Allow LAN connections** (sometimes called *Local network access* or *Bypass VPN for local network*), or disconnect the VPN while you're at home.",
                     "Allow **Local Network** access for AutoShareMount in **System Settings › Privacy & Security › Local Network**.",
                 ], note: nil)
             }

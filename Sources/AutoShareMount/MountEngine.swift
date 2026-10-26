@@ -36,6 +36,22 @@ final class MountEngine: ObservableObject {
     @Published private(set) var status: [UUID: ShareStatus] = [:]
     /// Network drives that are mounted but not in the saved list ("Keep this connected?").
     @Published private(set) var unsaved: [MountedVolume] = []
+    /// Interface name of a VPN carrying this Mac's traffic ("utun4"), if any.
+    @Published private(set) var vpn: String?
+    private var vpnLogged = false
+
+    /// A VPN is on and some drive can't connect: the VPN is a likely cause (it can hide
+    /// the home network). Shown as a hint in the menu and My Drives.
+    var vpnMayBeBlocking: Bool {
+        guard vpn != nil else { return false }
+        return store.shares.contains { s in
+            guard s.enabled, let st = status[s.id] else { return false }
+            switch st {
+            case .waiting, .failed, .needsSignIn: return true
+            default: return false
+            }
+        }
+    }
 
     let store: ShareStore
     let log: ActivityLog
@@ -191,6 +207,13 @@ final class MountEngine: ObservableObject {
             }
         }
         unsaved = mounts.filter { m in !store.shares.contains { s in s.parsed.map { m.matches($0) } ?? false } }
+        vpn = Net.activeVPN()
+        if vpnMayBeBlocking, !vpnLogged {
+            vpnLogged = true
+            log.add("A VPN is on (\(vpn ?? "")); it may be blocking your home network. If drives won't connect, allow LAN connections in the VPN's settings.")
+        } else if !vpnMayBeBlocking {
+            vpnLogged = false
+        }
     }
 
     /// Returns how many enabled shares are still not mounted.

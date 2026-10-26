@@ -72,6 +72,16 @@ Can't see the computer? Click **Connect by Address** and type its name (like `OF
 | **Needs your password** | Click **Sign In…** and tick *Remember this password*. |
 | **Ejected** | You ejected it. It returns after the next sleep or restart, or click **Connect**. |
 | **… isn't answering** | The computer is reachable but not sharing. Check that File Sharing is on. |
+| **"A VPN is on…" warning** | Your VPN is likely hiding your home network. See *Using a VPN* below. |
+
+### Using a VPN
+
+VPNs (Proton VPN, NordVPN, ExpressVPN and others) usually send all traffic through the tunnel, which hides the computers in your home. Finder can't connect to them either. If a drive won't connect while a VPN is on, AutoShareMount shows a warning. To fix it:
+
+- In the VPN app's settings, turn on **Allow LAN connections**. Other apps call it *Local network access*, *LAN traffic* or *Bypass VPN for local network*. Some VPNs only allow it with the kill switch off.
+- Or disconnect the VPN while you're at home.
+
+Then click **Reconnect All**.
 
 The **Activity** page shows everything AutoShareMount did, also saved to `~/Library/Logs/AutoShareMount.log`.
 

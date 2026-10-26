@@ -257,10 +257,11 @@ final class MountEngine: ObservableObject {
             let leftover = MountPoint.reusableLeftover(for: p.name)
             if leftover != nil { log.add("\(p.name): reusing its old folder so it keeps its usual name") }
             var (rc, path) = await Self.netfsMount(p, timeout: 20, at: leftover)
-            if rc == ETIMEDOUT, reach == .yes {
+            if Self.looksLikeStalledHelper(rc), reach == .yes {
                 // The server answers but the mount doesn't: macOS's network sign-in helper
                 // (NetAuthSysAgent) has most likely stalled, which blocks every connection —
-                // Finder's too. Restart it (at most every 5 minutes) and try again.
+                // Finder's too. A stalled helper either hangs (timeout) or fails at once with
+                // an odd error (seen: 62, ELOOP). Restart it (at most every 5 minutes), retry.
                 if Date().timeIntervalSince(lastHelperRestart) > 300 {
                     lastHelperRestart = Date()
                     log.add("macOS's network sign-in helper isn't responding — restarting it")
@@ -395,6 +396,13 @@ final class MountEngine: ObservableObject {
             Net.run("/usr/bin/osascript", ["-e", script], timeout: 40)
             return MountTable.current().contains { $0.matches(p) }
         }.value
+    }
+
+    /// Any failure that isn't a clear answer from the server (wrong password, no such share,
+    /// sharing off, already mounted) — from a server that does answer.
+    nonisolated static func looksLikeStalledHelper(_ c: Int32) -> Bool {
+        guard c != 0, c != EEXIST, !isAuthError(c) else { return false }
+        return ![ENOENT, -6003, ECONNREFUSED, EHOSTUNREACH, ENETUNREACH].contains(c)
     }
 
     nonisolated static func isAuthError(_ c: Int32) -> Bool {

@@ -20,6 +20,12 @@ APP="$STAGE/AutoShareMount.app"
 ZIP="$STAGE/AutoShareMount.zip"
 trap 'rm -rf "$STAGE"' EXIT
 
+# Universal builds need Xcode's build system; use Xcode even if the active developer
+# directory was switched to the Command Line Tools (software updates do this).
+if [[ -z "${DEVELOPER_DIR:-}" && -d /Applications/Xcode.app/Contents/Developer ]]; then
+  export DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer
+fi
+
 echo "→ Compiling (release, universal)…"
 swift build -c release --arch arm64 --arch x86_64
 BIN="$(swift build -c release --arch arm64 --arch x86_64 --show-bin-path)/AutoShareMount"
